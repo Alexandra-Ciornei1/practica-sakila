@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+src/app/api/film/mistral-7b-instruct-v0.2.Q4_K_M.gguf 
+package-lock.json 
+mistral-7b-instruct-v0.2.Q4_K_M.gguf
+venv*
+
