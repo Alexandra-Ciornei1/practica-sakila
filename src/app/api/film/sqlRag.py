@@ -30,6 +30,7 @@ llm = Llama(
 # === FASTAPI APP ===
 app = FastAPI()
 app.add_middleware(
+    
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
@@ -45,13 +46,13 @@ def generate_sql(question: str) -> str:
     schema = """
 SCHEMA OF SAKILA DATABASE:
 
-Table: actor (ac)
+Table: actor (a)
 - actor_id (SMALLINT, PK)
 - first_name (VARCHAR(45))
 - last_name (VARCHAR(45))
 - last_update (TIMESTAMP)
 
-Table: address (a)
+Table: address (ad)
 - address_id (SMALLINT, PK)
 - address (VARCHAR(50))
 - address2 (VARCHAR(50), NULLABLE)
@@ -168,26 +169,40 @@ Table: store (st)
 """
 
     prompt = f"""
-You are a MySQL SQL generator.
+You are an expert SQL generator for the Sakila MySQL database.
 
-Your task is to generate only a valid SQL query based on the user's question.
+### TASK:
+Generate ONLY one syntactically correct SQL query for the user's question.
 
-DO NOT include explanations, translations, markdown, or any labels like 'Answer:'.
+### RULES:
+- DO NOT include explanations, translations, markdown, or any labels like 'Answer:'.
+- Use table aliases (e.g., film AS f, category AS c, film_category AS fc, actor AS a, film_actor AS fa).
+- Use ONLY tables and columns from the schema below.
+- Do NOT output explanations, markdown, or comments. Only the SQL query.
+- All string comparisons must be case-insensitive (use LOWER()).
+- If a column exists in multiple tables, specify the table alias.
+- If you use category data (like c.name), you MUST JOIN: film -> film_category -> category.
+- If you use actor data, you MUST JOIN: actor -> film_actor -> film.
+- For customer addresses, JOIN: customer -> address -> city.
+- For inventory, JOIN: film -> inventory.
+- Generate ONE single SQL query that answers the question.
+- Do NOT generate multiple options or alternatives.
+- Do NOT use UNION unless explicitly required by the question.
+- Do NOT output "OR SELECT", "Option 1", "Option 2" or any alternatives.
+- If the user's question is unrelated to the Sakila database (e.g., greetings, thanks, nonsense), respond with exactly:
+NO_SQL_QUERY_POSSIBLE
 
-IMPORTANT:
-- Use table aliases (e.g., film AS f, film_text AS ft)
-- Use only tables and columns from the schema.
-- All string comparisons must be case-insensitive (use LOWER()) when needed.
-- When a column exists in multiple tables (like 'description'), you MUST specify the table alias (e.g., f.description or ft.description).
+### SCHEMA:
 
 {schema}
 
-USER QUESTION:
+### USER QUESTION:
 "{question}"
 """
 
     output = llm(prompt=prompt, max_tokens=512, stop=["</s>"])
     raw_output = output["choices"][0]["text"].strip()
+
 
     # Curățare SQL: elimină explicații sau markdown
     lines = raw_output.splitlines()
@@ -196,6 +211,10 @@ USER QUESTION:
         if not line.strip().lower().startswith(("translation", "explanation", "answer", "sql"))
         and not line.strip().startswith("```")
     ])
+
+    upper_sql = cleaned_sql.upper()
+    if "OR SELECT" in upper_sql or "OPTION" in upper_sql:
+        raise ValueError("Invalid SQL: Detected multiple options or 'OR SELECT'.")
 
     return cleaned_sql.strip()
 
